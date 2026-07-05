@@ -1,0 +1,18 @@
+# Research Report
+
+Query: artificial intelligence
+
+## Plan
+- Overview of artificial intelligence
+- Key facts about artificial intelligence
+- Recent developments related to artificial intelligence
+
+## Findings
+- Overview of artificial intelligence is a broad topic that benefits from structured research and verification.
+- Key facts about artificial intelligence is a broad topic that benefits from structured research and verification.
+- Recent developments related to artificial intelligence is a broad topic that benefits from structured research and verification.
+
+## Validation
+- Valid: True
+- Word count: 48
+- Preview: Overview of artificial intelligence is a broad topic that benefits from structured research and verification. Key facts about artificial intelligence is a broad topic that benefits from structured research and verification. Recent developme
