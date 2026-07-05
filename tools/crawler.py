@@ -1,21 +1,21 @@
-from playwright.sync_api import sync_playwright
 import trafilatura
 
-def get_page_text(url):
+
+def get_page_text(url: str) -> str:
+
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
 
-            page.goto(url, timeout=60000)
+        downloaded = trafilatura.fetch_url(url)
 
-            html = page.content()
+        if not downloaded:
+            return ""
 
-            browser.close()
+        text = trafilatura.extract(downloaded)
 
-        text = trafilatura.extract(html)
-
-        return text if text else ""
+        return text or ""
 
     except Exception as e:
-        return f"ERROR: {e}"
+
+        print("Crawler Error:", e)
+
+        return ""

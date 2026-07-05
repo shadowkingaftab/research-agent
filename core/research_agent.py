@@ -2,8 +2,8 @@ from agent.agent import ask_llm
 from agent.planner import create_plan
 from agent.researcher import evaluate_research
 
-from tools.search import search_web
-from tools.crawler import get_page_text
+from tools.search_tool import search_web
+from tools.crawler_tool import get_page_text
 
 from core.models import Task
 
