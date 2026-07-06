@@ -6,5 +6,5 @@ class Tool(ABC):
     name = ""
 
     @abstractmethod
-    def run(self, task):
+    def run(self, task, context):
         pass

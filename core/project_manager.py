@@ -6,23 +6,50 @@ class ProjectManager:
 
     def __init__(self):
 
-        self.base = Path("projects")
-        self.base.mkdir(exist_ok=True)
+        self.project_dir = Path("projects")
+        self.project_dir.mkdir(exist_ok=True)
 
-    def save(self, name, task):
+    def save(self, task):
 
-        folder = self.base / name
-        folder.mkdir(exist_ok=True)
+        filename = (
+            task.goal.lower()
+            .replace(" ", "_")
+            .replace("/", "_")
+        )[:80]
 
-        with open(folder / "task.json", "w", encoding="utf-8") as f:
-            json.dump(task.__dict__, f, indent=2, default=list)
+        path = self.project_dir / f"{filename}.json"
 
-    def load(self, name):
+        data = {
+            "user_request": task.user_request,
+            "goal": task.goal,
+            "task_type": task.task_type,
+            "expected_output": task.expected_output,
+            "search_queries": task.search_queries,
+            "documents": task.documents,
+            "search_results": task.search_results,
+            "research_corpus": task.research_corpus,
+            "extracted_data": task.extracted_data,
+            "final_answer": task.final_answer,
+            "thoughts": getattr(task, "thoughts", []),
+            "visited_urls": list(task.visited_urls),
+            "data": task.data,
+        }
 
-        folder = self.base / name
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
 
-        with open(folder / "task.json", encoding="utf-8") as f:
+        return path
+
+    def load(self, filename):
+
+        path = self.project_dir / filename
+
+        with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
 
+    def list_projects(self):
 
-projects = ProjectManager()
+        return sorted(self.project_dir.glob("*.json"))
+
+
+project_manager = ProjectManager()

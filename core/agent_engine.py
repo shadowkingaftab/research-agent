@@ -4,7 +4,13 @@ from agent.planner import create_plan
 from agent.brain import decide
 
 from tools.registry import get
+
 from core.logger import logger
+from core.project_manager import project_manager
+from core.memory import memory
+from core.retry import retry
+from core.profiler import profiler
+from core.document_store import DocumentStore
 
 # Register tools
 import tools.search_tool
@@ -14,16 +20,19 @@ import tools.merge_tool
 import tools.validator_tool
 import tools.writer_tool
 
-try:
-    from core.project_manager import projects
-    HAS_PROJECTS = True
-except Exception:
-    HAS_PROJECTS = False
-
 
 class AgentEngine:
 
     def run(self, task: Task):
+
+        # -------------------------
+        # Load Memory
+        # -------------------------
+
+        try:
+            task.previous_memories = memory.load_all()
+        except Exception:
+            task.previous_memories = []
 
         # -------------------------
         # Planning
@@ -51,7 +60,7 @@ class AgentEngine:
         ]
 
         # -------------------------
-        # Initialize task state
+        # Initialize State
         # -------------------------
 
         task.documents = []
@@ -63,20 +72,28 @@ class AgentEngine:
         task.data = {}
         task.final_answer = ""
 
+        task.current_step = 0
         task.thoughts = []
         task.action_history = []
-        task.current_step = 0
 
-        print("\n========================================")
-        print("AUTONOMOUS RESEARCH AGENT")
-        print("========================================")
-        print("Goal:", task.goal)
+        task.document_store.clear()
+
+        logger.log("=" * 60)
+        logger.log("AUTONOMOUS RESEARCH AGENT")
+        logger.log("=" * 60)
+        logger.log(f"Goal: {task.goal}")
+        logger.log(f"Loaded Memories: {len(task.previous_memories)}")
+
+        # -------------------------
+        # Main Agent Loop
+        # -------------------------
 
         max_steps = 20
 
         for _ in range(max_steps):
 
-            print(f"\n========== STEP {task.current_step + 1} ==========")
+            logger.log("")
+            logger.log(f"STEP {task.current_step + 1}")
 
             try:
 
@@ -84,7 +101,7 @@ class AgentEngine:
 
             except Exception as e:
 
-                print("Brain Error:", e)
+                logger.log(f"Brain Error: {e}")
                 break
 
             thought = decision.get("thought", "")
@@ -92,24 +109,32 @@ class AgentEngine:
 
             task.thoughts.append(thought)
 
-            logger.log(f"Thought: {thought}")
-            logger.log(f"Action: {tool_name}")
+            logger.log(f"Thought : {thought}")
+            logger.log(f"Action  : {tool_name}")
 
             if tool_name == "finish":
 
-                print("\nAgent decided the task is complete.")
+                logger.log("Brain decided research is complete.")
                 break
 
             if tool_name not in task.tools:
 
-                print(f"\nUnknown tool: {tool_name}")
+                logger.log(f"Unknown Tool: {tool_name}")
                 break
 
             try:
 
                 tool = get(tool_name)
 
-                tool.run(task)
+                profiler.start(tool_name)
+
+                try:
+
+                    retry(tool.run, task)
+
+                finally:
+
+                    elapsed = profiler.stop(tool_name)
 
                 task.current_step += 1
 
@@ -117,6 +142,7 @@ class AgentEngine:
                     {
                         "step": task.current_step,
                         "tool": tool_name,
+                        "time": round(elapsed, 2),
                         "documents": len(task.documents),
                         "search_results": len(task.search_results),
                         "extracted_items": (
@@ -127,57 +153,108 @@ class AgentEngine:
                     }
                 )
 
-                logger.log(f"Finished: {tool_name}")
+                logger.log(
+                    f"Finished {tool_name} in {elapsed:.2f}s"
+                )
 
             except Exception as e:
 
-                print(f"Tool Error ({tool_name}): {e}")
+                logger.log(
+                    f"Tool Error ({tool_name}): {e}"
+                )
+
                 break
 
         # -------------------------
-        # Save project
+        # Save Project
         # -------------------------
 
-        if HAS_PROJECTS:
+        try:
 
-            try:
+            project_path = project_manager.save(task)
 
-                projects.save("latest", task)
+            logger.log(f"Project Saved: {project_path}")
 
-                logger.log("Project saved.")
+        except Exception as e:
 
-            except Exception as e:
-
-                print("Project Save Error:", e)
+            logger.log(f"Project Save Error: {e}")
 
         # -------------------------
-        # Final Output
+        # Save Memory
         # -------------------------
 
-        print("\n========================================")
-        print("FINAL ANSWER")
-        print("========================================")
+        try:
+
+            memory.save(task)
+
+            logger.log("Memory Updated")
+
+        except Exception as e:
+
+            logger.log(f"Memory Save Error: {e}")
+
+        # -------------------------
+        # Final Answer
+        # -------------------------
+
+        logger.log("")
+        logger.log("=" * 60)
+        logger.log("FINAL ANSWER")
+        logger.log("=" * 60)
 
         if task.final_answer:
+
             print(task.final_answer)
+
         else:
+
             print("No final answer generated.")
 
-        print("\n========================================")
-        print("SESSION SUMMARY")
-        print("========================================")
-        print("Steps Executed :", task.current_step)
-        print("Documents      :", len(task.documents))
-        print("Search Results :", len(task.search_results))
+        # -------------------------
+        # Session Summary
+        # -------------------------
+
+        logger.log("")
+        logger.log("=" * 60)
+        logger.log("SESSION SUMMARY")
+        logger.log("=" * 60)
+
+        logger.log(f"Steps Executed : {task.current_step}")
+        logger.log(f"Documents      : {len(task.documents)}")
+        logger.log(f"Search Results : {len(task.search_results)}")
 
         if isinstance(task.extracted_data, list):
-            print("Extractions    :", len(task.extracted_data))
-        else:
-            print("Extractions    : 1")
 
-        print("\n========================================")
-        print("AGENT FINISHED")
-        print("========================================")
+            logger.log(
+                f"Extractions    : {len(task.extracted_data)}"
+            )
+
+        else:
+
+            logger.log("Extractions    : 1")
+
+        total_time = sum(
+            step.get("time", 0)
+            for step in task.action_history
+        )
+
+        logger.log(f"Total Tool Time: {total_time:.2f}s")
+
+        logger.log("")
+        logger.log("Tool Performance")
+
+        for step in task.action_history:
+
+            logger.log(
+                f"Step {step['step']:02d} | "
+                f"{step['tool']:<10} | "
+                f"{step['time']:.2f}s"
+            )
+
+        logger.log("")
+        logger.log("=" * 60)
+        logger.log("AGENT FINISHED")
+        logger.log("=" * 60)
 
         return task
 

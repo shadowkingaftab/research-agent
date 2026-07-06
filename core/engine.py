@@ -2,7 +2,9 @@ from core.task import Task
 from agent.planner import create_plan
 
 from tools.registry import get
+
 from core.logger import logger
+from core.context import AgentContext
 
 # Register tools
 import tools.search_tool
@@ -18,6 +20,12 @@ class Engine:
     def run(self, task: Task):
 
         # -------------------------
+        # Shared Context
+        # -------------------------
+
+        context = AgentContext()
+
+        # -------------------------
         # Planning
         # -------------------------
 
@@ -29,7 +37,7 @@ class Engine:
 
         task.search_queries = plan.get(
             "search_queries",
-            [task.user_request]
+            [task.user_request],
         )
 
         task.tools = plan.get(
@@ -44,105 +52,127 @@ class Engine:
             ],
         )
 
-        print("\n==============================")
-        print("RESEARCH PLAN")
-        print("==============================")
-        print(plan)
+        logger.log("==============================")
+        logger.log("RESEARCH PLAN")
+        logger.log("==============================")
+        logger.log(str(plan))
 
-        # Initialize persistent storage
+        # -------------------------
+        # Initialize Task
+        # -------------------------
+
         task.documents = []
+        task.search_results = []
         task.visited_urls = set()
         task.extracted_data = []
+        task.research_corpus = ""
 
         max_iterations = 3
 
+        # -------------------------
+        # Research Loop
+        # -------------------------
+
         for iteration in range(max_iterations):
 
-            print(f"\n========== Research Round {iteration + 1} ==========")
+            logger.log(
+                f"========== Research Round {iteration + 1} =========="
+            )
 
-            # Only clear temporary search results
+            # Temporary search results only
             task.search_results = []
 
-            # Run Search + Crawl
+            # -------------------------
+            # Search + Crawl
+            # -------------------------
+
             for tool_name in ("search", "crawl"):
 
                 if tool_name not in task.tools:
                     continue
 
-                print(f"\nRunning Tool: {tool_name}")
+                logger.log(f"Running Tool: {tool_name}")
 
-                get(tool_name).run(task)
+                tool = get(tool_name)
 
-            # Rebuild corpus from ALL collected documents
-            corpus = ""
+                tool.run(task, context)
 
-            for doc in task.documents:
+            # -------------------------
+            # Rebuild Research Corpus
+            # -------------------------
 
-                corpus += f"""
+            
 
-TITLE:
-{doc['title']}
+            # -------------------------
+            # Extract
+            # -------------------------
 
-URL:
-{doc['url']}
-
-CONTENT:
-{doc['content'][:6000]}
-
-"""
-
-            task.research_corpus = corpus
-
-            # Extract everything from accumulated corpus
             if "extract" in task.tools:
 
-                logger.log("Running Tool: search")
+                logger.log("Running Tool: extract")
 
-                get("extract").run(task)
+                get("extract").run(task, context)
 
+            # -------------------------
             # Validate
+            # -------------------------
+
             if "validate" in task.tools:
 
-                print("\nRunning Tool: validate")
+                logger.log("Running Tool: validate")
 
-                get("validate").run(task)
+                get("validate").run(task, context)
 
             evaluation = task.data.get("evaluation")
 
             if evaluation is None:
+                logger.log("Validator returned no evaluation.")
                 break
 
             if evaluation.get("enough_information", False):
+
                 logger.log("Research complete.")
+
                 break
 
-            new_queries = evaluation.get("next_search_queries", [])
+            new_queries = evaluation.get(
+                "next_search_queries",
+                [],
+            )
 
             if not new_queries:
-                print("\nNo additional search queries.")
+
+                logger.log("No additional search queries.")
+
                 break
 
             logger.log("Need another research round.")
 
             task.search_queries = new_queries
 
-        # Merge chunk extractions
+        # -------------------------
+        # Merge
+        # -------------------------
+
         if "merge" in task.tools:
 
-            print("\nRunning Merge Tool...")
+            logger.log("Running Merge Tool...")
 
-            get("merge").run(task)
+            get("merge").run(task, context)
 
-        # Final report
+        # -------------------------
+        # Writer
+        # -------------------------
+
         if "write" in task.tools:
 
-            print("\nRunning Writer Tool...")
+            logger.log("Running Writer Tool...")
 
-            get("write").run(task)
+            get("write").run(task, context)
 
-        print("\n==============================")
-        print("ENGINE FINISHED")
-        print("==============================")
+        logger.log("==============================")
+        logger.log("ENGINE FINISHED")
+        logger.log("==============================")
 
         return task
 

@@ -5,21 +5,24 @@ from tools.registry import register
 
 from core.thread_pool import executor
 from core.cache import cache
+from core.logger import logger
 
 from tools.crawler import get_page_text
-from core.logger import logger
+
+from models.source import Source
+from models.document import Document
 
 
 class CrawlerTool(Tool):
 
     name = "crawl"
 
-    def run(self, task):
+    def run(self, task, context):
 
         futures = {}
 
         # -------------------------
-        # Crawl every search result
+        # Crawl search results
         # -------------------------
 
         for result in task.search_results:
@@ -35,32 +38,45 @@ class CrawlerTool(Tool):
             task.visited_urls.add(url)
 
             # -------------------------
-            # Check page cache
+            # Check cache
             # -------------------------
 
-            cached = cache.load("pages", url)
+            cached_page = cache.get(url)
 
-            if cached is not None:
+            if cached_page is not None:
 
-                print(f"Using cached page: {url}")
+                logger.log(f"Cache hit: {url}")
+
+                document = Document(
+                    source=Source(
+                        title=result.get("title", ""),
+                        url=url,
+                    ),
+                    content=cached_page,
+                )
+
+                context.document_store.add(document)
 
                 task.documents.append(
                     {
-                        "title": result.get("title", ""),
-                        "url": url,
-                        "content": cached["content"],
+                        "title": document.source.title,
+                        "url": document.source.url,
+                        "content": document.content,
                     }
                 )
 
                 continue
 
-            # Download in parallel
+            # -------------------------
+            # Download page
+            # -------------------------
+
             futures[
                 executor.submit(get_page_text, url)
             ] = (url, result)
 
         # -------------------------
-        # Wait for downloads
+        # Collect downloaded pages
         # -------------------------
 
         for future in as_completed(futures):
@@ -74,19 +90,23 @@ class CrawlerTool(Tool):
                 if not page:
                     continue
 
-                cache.save(
-                    "pages",
-                    url,
-                    {
-                        "content": page
-                    }
+                cache.set(url, page)
+
+                document = Document(
+                    source=Source(
+                        title=result.get("title", ""),
+                        url=url,
+                    ),
+                    content=page,
                 )
+
+                context.document_store.add(document)
 
                 task.documents.append(
                     {
-                        "title": result.get("title", ""),
-                        "url": url,
-                        "content": page,
+                        "title": document.source.title,
+                        "url": document.source.url,
+                        "content": document.content,
                     }
                 )
 
@@ -119,7 +139,7 @@ CONTENT:
 
         task.research_corpus = "\n\n".join(corpus_parts)
 
-        print(f"\nDocuments collected: {len(task.documents)}")
+        logger.log(f"Documents collected: {len(task.documents)}")
 
         return task
 

@@ -1,4 +1,3 @@
-import hashlib
 import json
 from pathlib import Path
 
@@ -7,34 +6,65 @@ class Cache:
 
     def __init__(self):
 
-        self.base = Path("cache")
+        self.cache_dir = Path("cache")
+        self.cache_dir.mkdir(exist_ok=True)
 
-        (self.base / "pages").mkdir(parents=True, exist_ok=True)
-        (self.base / "llm").mkdir(parents=True, exist_ok=True)
-        (self.base / "search").mkdir(parents=True, exist_ok=True)
+    def _safe_key(self, key):
 
-    def _path(self, folder, key):
+        key = str(key)
 
-        filename = hashlib.md5(key.encode()).hexdigest() + ".json"
+        for ch in '<>:"/\\|?*&=%':
+            key = key.replace(ch, "_")
 
-        return self.base / folder / filename
+        return key[:200]
 
-    def load(self, folder, key):
+    def _path(self, key):
 
-        path = self._path(folder, key)
+        return self.cache_dir / f"{self._safe_key(key)}.json"
+
+    def exists(self, key):
+
+        return self._path(key).exists()
+
+    def get(self, key):
+
+        path = self._path(key)
 
         if not path.exists():
             return None
 
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
 
-    def save(self, folder, key, value):
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
 
-        path = self._path(folder, key)
+        except Exception:
+
+            return None
+
+    def set(self, key, value):
+
+        path = self._path(key)
 
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(value, f, indent=2, ensure_ascii=False)
+            json.dump(
+                value,
+                f,
+                indent=2,
+                ensure_ascii=False,
+            )
+
+    def delete(self, key):
+
+        path = self._path(key)
+
+        if path.exists():
+            path.unlink()
+
+    def clear(self):
+
+        for file in self.cache_dir.glob("*.json"):
+            file.unlink()
 
 
 cache = Cache()
