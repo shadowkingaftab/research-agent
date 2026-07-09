@@ -22,3 +22,8 @@ class AgentContext:
 
         self.document_store = DocumentStore()
         self.evidence_store = EvidenceStore()
+
+    def clear(self):
+
+        self.document_store.clear()
+        self.evidence_store.clear()

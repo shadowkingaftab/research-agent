@@ -1,87 +1,27 @@
-from agent.agent import ask_llm
-from agent.planner import create_plan
-from agent.researcher import evaluate_research
-
-from tools.search_tool import search_web
-from tools.crawler_tool import get_page_text
+from core.agent_engine import agent_engine
+from core.task import Task
 
 
-def run_agent(question: str):
+def main():
 
-    plan = create_plan(question)
+    print("========================================")
+    print("AUTONOMOUS RESEARCH AGENT")
+    print("========================================")
 
-    searched = set()
-    documents = ""
+    while True:
 
-    queries = plan.get("search_queries", [question])
+        request = input("\nResearch Request (or 'exit'): ").strip()
 
-    max_rounds = 3
-
-    for round_num in range(max_rounds):
-
-        print(f"\n========== ROUND {round_num + 1} ==========")
-
-        all_results = []
-
-        for query in queries:
-
-            print(f"Searching: {query}")
-
-            results = search_web(query, max_results=3)
-
-            for r in results:
-
-                url = r.get("href", r.get("url", ""))
-
-                if url and url not in searched:
-                    searched.add(url)
-                    all_results.append(r)
-
-        if not all_results:
+        if request.lower() in {"exit", "quit"}:
             break
 
-        for i, r in enumerate(all_results, 1):
+        if not request:
+            continue
 
-            url = r.get("href", r.get("url", ""))
+        task = Task(user_request=request)
 
-            print(f"Reading: {url}")
+        agent_engine.run(task)
 
-            page = get_page_text(url)
 
-            documents += f"""
-
-SOURCE
-
-Title:
-{r.get("title","")}
-
-URL:
-{url}
-
-Content:
-{page[:8000]}
-
-"""
-
-        evaluation = evaluate_research(question, documents)
-
-        print(evaluation)
-
-        if evaluation.get("enough_information"):
-            break
-
-        queries = evaluation.get("next_search_queries", [])
-
-    final_prompt = f"""
-You are an expert research assistant.
-
-Question:
-{question}
-
-Research:
-{documents}
-
-Produce the best possible answer.
-"""
-
-    return ask_llm(final_prompt)
+if __name__ == "__main__":
+    main()

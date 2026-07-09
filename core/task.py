@@ -39,6 +39,7 @@ class Task:
     # -------------------------
 
     extracted_data: list = field(default_factory=list)
+    retrieved_evidence: list = field(default_factory=list)
 
     # -------------------------
     # Agent State

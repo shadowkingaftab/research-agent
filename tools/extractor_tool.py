@@ -8,6 +8,10 @@ from core.llm import llm
 from core.chunker import chunk_text
 from core.logger import logger
 from core.evidence_ranker import ranker
+from models.evidence import Evidence
+from pipeline.source_ranker import source_ranker
+from pipeline.embedder import embedder
+from pipeline.vector_store import vector_store
 
 
 class ExtractTool(Tool):
@@ -17,6 +21,8 @@ class ExtractTool(Tool):
     def run(self, task, context):
 
         logger.log("Starting extraction...")
+        if not task.extracted_data:
+            vector_store.clear()
 
         if not task.research_corpus.strip():
 
@@ -104,30 +110,82 @@ Return ONLY valid JSON.
 
                 for company in result.get("companies", []):
 
-                    evidence = {
-                        "type": "company",
-                        "value": company,
-                        "source": source_url,
-                    }
+                    evidence = Evidence(
+                        fact=company,
+                        category="company",
+                        source_url=source_url,
+                        source_title=document.source.title,
+                        document_id=document.id,
+                        chunk_id=chunk_index,
+                        confidence=source_ranker.score(source_url),
+                    )
+# ---------------------------------
+# Generate semantic embedding
+# ---------------------------------
 
-                    context.evidence_store.add(
-                        ranker.rank(evidence)
+                text_for_embedding = " ".join(
+                    filter(
+                        None,
+                        [
+                            evidence.fact,
+                            evidence.summary,
+                            " ".join(evidence.entities),
+                            " ".join(evidence.keywords),
+                        ],
+                    )
                 )
+
+                evidence.embedding = embedder.encode(
+                    text_for_embedding
+                )
+
+                context.evidence_store.add(evidence)
+
+                vector_store.add(evidence)
+
+                task.extracted_data.append(evidence)
+
+                    
 # -------------------------
 # People
 # -------------------------
 
                 for person in result.get("people", []):
 
-                    evidence = {
-                        "type": "company",
-                        "value": company,
-                        "source": source_url,
-                    }
-
-                    context.evidence_store.add(
-                        ranker.rank(evidence)
+                    evidence = Evidence(
+                        fact=person,
+                        category="person",
+                        source_url=source_url,
+                        source_title=document.source.title,
+                        document_id=document.id,
+                        chunk_id=chunk_index,
+                        confidence=source_ranker.score(source_url),
                     )
+# ---------------------------------
+# Generate semantic embedding
+# ---------------------------------
+
+                text_for_embedding = " ".join(
+                    filter(
+                        None,
+                        [
+                            evidence.fact,
+                            evidence.summary,
+                            " ".join(evidence.entities),
+                            " ".join(evidence.keywords),
+                        ],
+                    )
+                )
+
+                evidence.embedding = embedder.encode(
+                    text_for_embedding
+                )
+
+                context.evidence_store.add(evidence)
+
+                vector_store.add(evidence)
+
+                task.extracted_data.append(evidence)
 
 # -------------------------
 # Products
@@ -135,15 +193,40 @@ Return ONLY valid JSON.
 
                 for product in result.get("products", []):
 
-                    evidence = {
-                        "type": "company",
-                        "value": company,
-                        "source": source_url,
-                    }
-
-                    context.evidence_store.add(
-                        ranker.rank(evidence)
+                    evidence = Evidence(
+                        fact=product,
+                        category="product",
+                        source_url=source_url,
+                        source_title=document.source.title,
+                        document_id=document.id,
+                        chunk_id=chunk_index,
+                        confidence=source_ranker.score(source_url),
                     )
+# ---------------------------------
+# Generate semantic embedding
+# ---------------------------------
+
+                text_for_embedding = " ".join(
+                    filter(
+                        None,
+                        [
+                            evidence.fact,
+                            evidence.summary,
+                            " ".join(evidence.entities),
+                            " ".join(evidence.keywords),
+                        ],
+                    )
+                )
+
+                evidence.embedding = embedder.encode(
+                    text_for_embedding
+                )
+                    
+                context.evidence_store.add(evidence)
+
+                vector_store.add(evidence)
+
+                task.extracted_data.append(evidence)
 
 # -------------------------
 # Facts
@@ -151,15 +234,40 @@ Return ONLY valid JSON.
 
                 for fact in result.get("facts", []):
 
-                    evidence = {
-                        "type": "company",
-                        "value": company,
-                        "source": source_url,
-                    }
-
-                    context.evidence_store.add(
-                        ranker.rank(evidence)
+                    evidence = Evidence(
+                        fact=fact,
+                        category="fact",
+                        source_url=source_url,
+                        source_title=document.source.title,
+                        document_id=document.id,
+                        chunk_id=chunk_index,
+                        confidence=source_ranker.score(source_url),
                     )
+# ---------------------------------
+# Generate semantic embedding
+# ---------------------------------
+
+                text_for_embedding = " ".join(
+                    filter(
+                        None,
+                        [
+                            evidence.fact,
+                            evidence.summary,
+                            " ".join(evidence.entities),
+                            " ".join(evidence.keywords),
+                        ],
+                    )
+                )
+
+                evidence.embedding = embedder.encode(
+                    text_for_embedding
+                )
+
+                context.evidence_store.add(evidence)
+
+                vector_store.add(evidence)
+
+                task.extracted_data.append(evidence)
 # -------------------------
 # Summary
 # -------------------------
@@ -168,15 +276,39 @@ Return ONLY valid JSON.
 
                 if summary:
 
-                   evidence = {
-                        "type": "company",
-                        "value": company,
-                        "source": source_url,
-                }
+                    evidence = Evidence(
+                        fact=summary,
+                        category="summary",
+                        source_url=source_url,
+                        source_title=document.source.title,
+                        document_id=document.id,
+                        chunk_id=chunk_index,
+                        confidence=source_ranker.score(source_url) * 0.90,
+                    )
+# ---------------------------------
+# Generate semantic embedding
+# ---------------------------------
 
-                   context.evidence_store.add(
-                        ranker.rank(evidence)
-            )
+                text_for_embedding = " ".join(
+                    filter(
+                        None,
+                        [
+                            evidence.fact,
+                            evidence.summary,
+                            " ".join(evidence.entities),
+                            " ".join(evidence.keywords),
+                        ],
+                    )
+                )
+
+                evidence.embedding = embedder.encode(
+                    text_for_embedding
+                )
+                context.evidence_store.add(evidence)
+
+                vector_store.add(evidence)
+
+                task.extracted_data.append(evidence)
 
                 logger.log(f"Chunk {i} extracted successfully.")
 
@@ -184,7 +316,7 @@ Return ONLY valid JSON.
 
                 logger.log(f"Chunk {i} failed: {e}")
 
-        task.extracted_data = extracted
+        task.extracted_data = context.evidence_store.all()
 
         total_facts = 0
 

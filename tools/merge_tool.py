@@ -1,8 +1,10 @@
+from collections import defaultdict
+
 from tools.base import Tool
 from tools.registry import register
 
-from core.llm import llm
 from core.logger import logger
+from models.evidence import Evidence
 
 
 class MergeTool(Tool):
@@ -11,41 +13,109 @@ class MergeTool(Tool):
 
     def run(self, task):
 
-        print("\nMerging extracted information...")
+        logger.log("Merging evidence...")
 
-        prompt = f"""
-You are an expert research analyst.
+        merged = defaultdict(list)
 
-The following JSON objects were extracted from different parts of a large research corpus.
+        # ----------------------------------
+        # Group evidence by normalized fact
+        # ----------------------------------
 
-Merge them into ONE complete JSON object.
+        for evidence in task.extracted_data:
 
-Requirements:
-- Remove duplicate facts.
-- Merge duplicate companies.
-- Merge duplicate people.
-- Keep the most detailed summary.
-- Do not invent information.
+            if not evidence.fact.strip():
+                continue
 
-Data:
+            key = evidence.fact.strip().lower()
 
-{task.extracted_data}
+            merged[key].append(evidence)
 
-Return ONLY valid JSON.
+        merged_evidence = []
 
-{{
-    "key_points": [],
-    "companies": [],
-    "people": [],
-    "products": [],
-    "facts": [],
-    "summary": ""
-}}
-"""
+        # ----------------------------------
+        # Merge each group
+        # ----------------------------------
 
-        task.extracted_data = llm.generate_json(prompt)
+        for group in merged.values():
 
-        logger.log("Merge complete.")
+            first = group[0]
+
+            confidence = 0.0
+
+            support_urls = set()
+            support_quotes = set()
+            entities = set()
+            keywords = set()
+
+            metadata = {}
+
+            for item in group:
+
+                confidence += item.confidence
+
+                support_urls.add(item.source_url)
+
+                support_quotes.update(item.supporting_quotes)
+
+                entities.update(item.entities)
+
+                keywords.update(item.keywords)
+
+                metadata.update(item.metadata)
+
+            confidence /= len(group)
+
+            merged_item = Evidence(
+
+                fact=first.fact,
+
+                category=first.category,
+
+                summary=first.summary,
+
+                source_url=first.source_url,
+
+                source_title=first.source_title,
+
+                document_id=first.document_id,
+
+                chunk_id=first.chunk_id,
+
+                confidence=round(confidence, 3),
+
+                entities=sorted(entities),
+
+                keywords=sorted(keywords),
+
+                supporting_quotes=sorted(support_quotes),
+
+                supporting_sources=sorted(support_urls),
+
+                metadata=metadata,
+
+            )
+
+            merged_item.metadata["support_count"] = len(group)
+
+            merged_item.metadata["source_count"] = len(support_urls)
+
+            merged_evidence.append(merged_item)
+
+        merged_evidence.sort(
+
+            key=lambda x: x.confidence,
+
+            reverse=True,
+
+        )
+
+        task.extracted_data = merged_evidence
+
+        logger.log(
+
+            f"Merged into {len(merged_evidence)} unique evidence items."
+
+        )
 
         return task
 

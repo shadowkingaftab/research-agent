@@ -1,5 +1,7 @@
 from collections import defaultdict
 
+from models.evidence import Evidence
+
 
 class EvidenceStore:
 
@@ -8,16 +10,16 @@ class EvidenceStore:
 
     def clear(self):
 
-        self._facts = []
-        self._by_type = defaultdict(list)
+        self._facts: list[Evidence] = []
+        self._by_category = defaultdict(list)
 
-    def add(self, evidence: dict):
+    def add(self, evidence: Evidence):
 
         self._facts.append(evidence)
 
-        evidence_type = evidence.get("type", "unknown")
+        category = evidence.category or "unknown"
 
-        self._by_type[evidence_type].append(evidence)
+        self._by_category[category].append(evidence)
 
     def extend(self, evidence_list):
 
@@ -28,9 +30,11 @@ class EvidenceStore:
 
         return list(self._facts)
 
-    def by_type(self, evidence_type):
+    def by_category(self, category):
 
-        return list(self._by_type.get(evidence_type, []))
+        return list(
+            self._by_category.get(category, [])
+        )
 
     def count(self):
 
@@ -39,19 +43,31 @@ class EvidenceStore:
     def summary(self):
 
         return {
+
             "total": len(self._facts),
-            "types": {
-                key: len(value)
-                for key, value in self._by_type.items()
+
+            "categories": {
+
+                category: len(items)
+
+                for category, items
+
+                in self._by_category.items()
+
             },
+
         }
 
-    def clear_type(self, evidence_type):
+    def clear_category(self, category):
 
         self._facts = [
-            e
-            for e in self._facts
-            if e.get("type") != evidence_type
+
+            evidence
+
+            for evidence in self._facts
+
+            if evidence.category != category
+
         ]
 
-        self._by_type.pop(evidence_type, None)
+        self._by_category.pop(category, None)

@@ -1,12 +1,16 @@
 from datetime import datetime
 import json
 from pathlib import Path
+from dataclasses import asdict
 
 from tools.base import Tool
 from tools.registry import register
 
 from core.llm import llm
 from core.logger import logger
+
+from pipeline.citation_builder import citation_builder
+from pipeline.retriever import retriever
 
 from exporters.markdown_exporter import MarkdownExporter
 
@@ -23,6 +27,18 @@ class WriterTool(Tool):
 
         logger.log("Generating final report...")
 
+        # ---------------------------------
+        # Retrieve only the most relevant evidence
+        # ---------------------------------
+
+        relevant_evidence = retriever.retrieve(
+            query=task.user_request,
+            evidence=task.extracted_data,
+            limit=50,
+        )
+
+        task.retrieved_evidence = relevant_evidence
+
         prompt = f"""
 You are an expert research assistant.
 
@@ -35,8 +51,8 @@ Research Goal:
 Expected Output:
 {task.expected_output}
 
-Extracted Information:
-{task.extracted_data}
+Relevant Evidence:
+{relevant_evidence}
 
 Write a professional research report.
 
@@ -47,10 +63,11 @@ Requirements:
 - Use clear headings.
 - Use bullet points where appropriate.
 - Merge duplicate information.
-- Every factual statement should reference its source when available.
-- Ignore facts with confidence lower than 0.75.
+- Use only evidence with confidence >= 0.80.
+- When two facts conflict, prefer the one with the higher confidence.
+- Do not report unsupported claims.
 - Do NOT invent facts.
-- Base everything ONLY on the extracted information.
+- Base everything ONLY on the relevant evidence provided.
 - If information is missing, explicitly state that.
 - End with a short conclusion.
 """
@@ -65,7 +82,9 @@ Requirements:
 
 **Documents Crawled:** {len(task.documents)}
 
-**Extracted Chunks:** {len(task.extracted_data) if isinstance(task.extracted_data, list) else 1}
+**Evidence Items:** {len(task.extracted_data)}
+
+**Relevant Evidence Used:** {len(relevant_evidence)}
 
 ---
 
@@ -73,13 +92,37 @@ Requirements:
 
         report = header + report
 
+        # ---------------------------------
+        # Citations
+        # ---------------------------------
+
+        try:
+
+            citations = citation_builder.build(relevant_evidence)
+
+            if citations:
+
+                report += "\n\n---\n\n# Sources\n"
+
+                for fact, urls in citations.items():
+
+                    report += f"\n## {fact}\n"
+
+                    for url in urls:
+
+                        report += f"- {url}\n"
+
+        except Exception as e:
+
+            logger.log(f"Citation Error: {e}")
+
         task.final_answer = report
 
         logger.log("Final report generated.")
 
-        # -------------------------
+        # ---------------------------------
         # Export Markdown
-        # -------------------------
+        # ---------------------------------
 
         try:
 
@@ -96,9 +139,9 @@ Requirements:
 
             logger.log(f"Markdown Export Error: {e}")
 
-        # -------------------------
+        # ---------------------------------
         # Export JSON
-        # -------------------------
+        # ---------------------------------
 
         try:
 
@@ -114,10 +157,19 @@ Requirements:
 
             json_path = export_dir / f"{filename}.json"
 
+            serializable = []
+
+            for item in relevant_evidence:
+
+                try:
+                    serializable.append(asdict(item))
+                except Exception:
+                    serializable.append(item)
+
             with open(json_path, "w", encoding="utf-8") as f:
 
                 json.dump(
-                    task.extracted_data,
+                    serializable,
                     f,
                     indent=2,
                     ensure_ascii=False,
