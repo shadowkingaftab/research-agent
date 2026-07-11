@@ -5,6 +5,7 @@ from tools.registry import get
 
 from core.logger import logger
 from core.context import AgentContext
+from core.research_memory import research_memory
 
 # Register tools
 import tools.search_tool
@@ -39,7 +40,37 @@ class Engine:
             "search_queries",
             [task.user_request],
         )
+        # ---------------------------------
+        # Load Research Memory
+        # ---------------------------------
 
+        if task.use_memory:
+
+            project = task.project_name.strip()
+
+            if not project:
+
+                project = (
+                    task.goal
+                    .lower()
+                    .replace(" ", "_")
+                )
+
+                task.project_name = project
+
+            previous = research_memory.load(project)
+
+            task.loaded_memory = previous
+
+            task.memory_hits = len(previous)
+
+            for evidence in previous:
+
+                context.evidence_store.add(evidence)
+
+            logger.log(
+                f"Loaded {len(previous)} evidence from memory."
+            )
         task.tools = plan.get(
             "tools",
             [
@@ -51,6 +82,33 @@ class Engine:
                 "write",
             ],
         )
+        if task.use_memory:
+
+            project = task.project_name.strip()
+
+            if not project:
+
+                project = (
+                    task.goal
+                    .lower()
+                    .replace(" ", "_")
+                )
+
+                task.project_name = project
+
+            previous = research_memory.load(project)
+
+            task.loaded_memory = previous
+
+            task.memory_hits = len(previous)
+
+            for evidence in previous:
+
+                context.evidence_store.add(evidence)
+
+            logger.log(
+                f"Loaded {len(previous)} evidence from memory."
+            )
 
         logger.log("==============================")
         logger.log("RESEARCH PLAN")

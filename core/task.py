@@ -49,6 +49,12 @@ class Task:
     action_history: list = field(default_factory=list)
     current_step: int = 0
 
+    retrieved_evidence: list = field(default_factory=list)
+
+    research_statistics: dict = field(
+        default_factory=dict
+    )
+
     # -------------------------
     # Memory
     # -------------------------
@@ -60,6 +66,17 @@ class Task:
     # -------------------------
 
     final_answer: str = ""
+    # -------------------------
+    # Research Memory
+    # -------------------------
+
+    project_name: str = ""
+
+    use_memory: bool = True
+
+    loaded_memory: list = field(default_factory=list)
+
+    memory_hits: int = 0
 
     # -------------------------
     # Shared Data Between Tools
