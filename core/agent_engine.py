@@ -7,10 +7,10 @@ from tools.registry import get
 
 from core.logger import logger
 from core.project_manager import project_manager
-from core.memory import memory
+from core.research_memory import research_memory
 from core.retry import retry
 from core.profiler import profiler
-from core.document_store import DocumentStore
+from core.context import AgentContext
 
 # Register tools
 import tools.search_tool
@@ -26,13 +26,10 @@ class AgentEngine:
     def run(self, task: Task):
 
         # -------------------------
-        # Load Memory
+        # Shared Context
         # -------------------------
 
-        try:
-            task.previous_memories = memory.load_all()
-        except Exception:
-            task.previous_memories = []
+        context = AgentContext()
 
         # -------------------------
         # Planning
@@ -49,15 +46,24 @@ class AgentEngine:
             [task.user_request],
         )
 
-        task.tools = [
-            "search",
-            "crawl",
-            "extract",
-            "merge",
-            "validate",
-            "write",
-            "finish",
-        ]
+        task.tools = plan.get(
+            "tools",
+            [
+                "search",
+                "crawl",
+                "extract",
+                "merge",
+                "validate",
+                "write",
+                "finish",
+            ],
+        )
+
+        if "write" not in task.tools:
+            task.tools.append("write")
+
+        if "finish" not in task.tools:
+            task.tools.append("finish")
 
         # -------------------------
         # Initialize State
@@ -76,13 +82,30 @@ class AgentEngine:
         task.thoughts = []
         task.action_history = []
 
-        task.document_store.clear()
+        # -------------------------
+        # Load Research Memory
+        # -------------------------
+
+        if task.use_memory:
+
+            project = task.project_name.strip() or task.goal.lower().replace(" ", "_")
+
+            task.project_name = project
+
+            previous = research_memory.load(project)
+
+            task.loaded_memory = previous
+            task.memory_hits = len(previous)
+
+            for evidence in previous:
+                evidence.metadata["from_memory"] = True
+                context.evidence_store.add(evidence)
 
         logger.log("=" * 60)
         logger.log("AUTONOMOUS RESEARCH AGENT")
         logger.log("=" * 60)
         logger.log(f"Goal: {task.goal}")
-        logger.log(f"Loaded Memories: {len(task.previous_memories)}")
+        logger.log(f"Loaded Memories: {task.memory_hits}")
 
         # -------------------------
         # Main Agent Loop
@@ -130,7 +153,7 @@ class AgentEngine:
 
                 try:
 
-                    retry(tool.run, task)
+                    retry(tool.run, task, context)
 
                 finally:
 
@@ -183,11 +206,26 @@ class AgentEngine:
         # Save Memory
         # -------------------------
 
+        # -------------------------
+        # Save Research Memory
+        # -------------------------
+
         try:
 
-            memory.save(task)
+            if task.use_memory and task.project_name:
 
-            logger.log("Memory Updated")
+                research_memory.save(task.project_name, context.evidence_store.all())
+
+                task.research_statistics = {
+                    "documents": context.document_store.count(),
+                    "evidence_total": context.evidence_store.count(),
+                    "evidence_by_category": context.evidence_store.summary()["categories"],
+                    "memory_hits": task.memory_hits,
+                }
+
+                logger.log(
+                    f"Memory Updated ({context.evidence_store.count()} evidence)"
+                )
 
         except Exception as e:
 

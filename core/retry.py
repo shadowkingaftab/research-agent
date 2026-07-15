@@ -1,21 +1,56 @@
+import random
 import time
 
+from core.logger import logger
 
-def retry(func, *args, retries=3, delay=2, **kwargs):
+
+def retry(
+    func,
+    *args,
+    retries=3,
+    delay=2,
+    backoff=2,
+    **kwargs,
+):
 
     last_error = None
 
-    for attempt in range(retries):
+    current_delay = delay
+
+    for attempt in range(1, retries + 1):
 
         try:
+
             return func(*args, **kwargs)
 
-        except Exception as e:
+        except (
+            TimeoutError,
+            ConnectionError,
+        ) as e:
 
             last_error = e
 
-            print(f"Retry {attempt + 1}/{retries}: {e}")
+            logger.log(
+                f"Retry {attempt}/{retries}: {e}"
+            )
 
-            time.sleep(delay)
+            if attempt < retries:
+
+                sleep_time = (
+                    current_delay
+                    + random.uniform(0, 0.5)
+                )
+
+                time.sleep(sleep_time)
+
+                current_delay *= backoff
+
+        except Exception:
+
+            raise
+
+    logger.log(
+        f"Operation failed after {retries} attempts."
+    )
 
     raise last_error

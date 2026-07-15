@@ -23,8 +23,7 @@ class WriterTool(Tool):
 
         self.exporter = MarkdownExporter()
 
-    def run(self, task):
-
+    def run(self, task, context):
         logger.log("Generating final report...")
 
         # ---------------------------------
@@ -33,12 +32,20 @@ class WriterTool(Tool):
 
         relevant_evidence = retriever.retrieve(
             query=task.user_request,
-            evidence=task.extracted_data,
+            evidence=context.evidence_store.all(),
             limit=50,
         )
-
         task.retrieved_evidence = relevant_evidence
+        contradictions = task.data.get("contradictions", [])
 
+        if contradictions:
+            contradiction_summary = "\n".join(
+                f"- \"{c['evidence_a'].fact}\" vs \"{c['evidence_b'].fact}\" "
+                f"(severity: {c['severity']})"
+                for c in contradictions[:10]
+            )
+        else:
+            contradiction_summary = "None detected."
         prompt = f"""
 You are an expert research assistant.
 
@@ -53,6 +60,9 @@ Expected Output:
 
 Relevant Evidence:
 {relevant_evidence}
+
+Known Contradictions (resolve explicitly, do not silently pick one):
+{contradiction_summary}
 
 Write a professional research report.
 
@@ -91,6 +101,15 @@ Requirements:
 """
 
         report = header + report
+
+        # ---------------------------------
+        # Knowledge Graph
+        # ---------------------------------
+
+        mermaid = task.data.get("knowledge_graph_mermaid", "")
+
+        if mermaid:
+            report += "\n\n---\n\n# Knowledge Graph\n\n" + mermaid + "\n"
 
         # ---------------------------------
         # Citations

@@ -5,13 +5,14 @@ from tools.registry import register
 
 from core.logger import logger
 from models.evidence import Evidence
-
+from pipeline.evidence_graph import contradiction_detector
+from pipeline.evidence_graph import contradiction_detector, knowledge_graph
 
 class MergeTool(Tool):
 
     name = "merge"
 
-    def run(self, task):
+    def run(self, task, context):
 
         logger.log("Merging evidence...")
 
@@ -117,7 +118,40 @@ class MergeTool(Tool):
 
         )
 
-        return task
+        # ----------------------------------
+        # Contradiction Detection
+        # ----------------------------------
 
+        contradictions = contradiction_detector.find(merged_evidence)
+
+        task.data["contradictions"] = contradictions
+
+        if contradictions:
+
+            logger.log(
+                f"Detected {len(contradictions)} possible contradiction(s)."
+            )
+
+            for c in contradictions[:5]:
+
+                logger.log(
+                    f"  [{c['severity']}] "
+                    f"\"{c['evidence_a'].fact}\" vs \"{c['evidence_b'].fact}\""
+                )
+
+        return task
+        # ----------------------------------
+        # Knowledge Graph
+        # ----------------------------------
+
+        knowledge_graph.build(merged_evidence)
+
+        task.data["knowledge_graph"] = knowledge_graph.to_dict()
+        task.data["knowledge_graph_mermaid"] = knowledge_graph.to_mermaid()
+
+        logger.log(
+            f"Knowledge graph: {len(knowledge_graph.nodes)} nodes, "
+            f"{len(knowledge_graph.edges)} edges."
+        )
 
 register(MergeTool())

@@ -1,6 +1,10 @@
+# DEPRECATED: not used by main.py. The live entrypoint is
+# core/agent_engine.py (reasoning-loop agent driven by agent/brain.py).
+# Kept for reference only — do not wire this back in without also
+# reconciling Task's fixed pipeline vs. the brain's step-by-step loop.
+
 from core.task import Task
 from agent.planner import create_plan
-
 from tools.registry import get
 
 from core.logger import logger
@@ -66,6 +70,8 @@ class Engine:
 
             for evidence in previous:
 
+                evidence.metadata["from_memory"] = True
+
                 context.evidence_store.add(evidence)
 
             logger.log(
@@ -82,33 +88,6 @@ class Engine:
                 "write",
             ],
         )
-        if task.use_memory:
-
-            project = task.project_name.strip()
-
-            if not project:
-
-                project = (
-                    task.goal
-                    .lower()
-                    .replace(" ", "_")
-                )
-
-                task.project_name = project
-
-            previous = research_memory.load(project)
-
-            task.loaded_memory = previous
-
-            task.memory_hits = len(previous)
-
-            for evidence in previous:
-
-                context.evidence_store.add(evidence)
-
-            logger.log(
-                f"Loaded {len(previous)} evidence from memory."
-            )
 
         logger.log("==============================")
         logger.log("RESEARCH PLAN")
@@ -227,6 +206,33 @@ class Engine:
             logger.log("Running Writer Tool...")
 
             get("write").run(task, context)
+
+        # -------------------------
+        # Save Research Memory
+        # -------------------------
+
+        if task.use_memory and task.project_name:
+
+            research_memory.save(
+                task.project_name,
+                context.evidence_store.all(),
+            )
+
+            logger.log(
+                f"Saved {context.evidence_store.count()} evidence to memory."
+            )
+
+        # -------------------------
+        # Research Statistics
+        # -------------------------
+
+        task.research_statistics = {
+            "documents": context.document_store.count(),
+            "evidence_total": context.evidence_store.count(),
+            "evidence_by_category": context.evidence_store.summary()["categories"],
+            "memory_hits": task.memory_hits,
+            "final_evidence_used": len(task.retrieved_evidence),
+        }
 
         logger.log("==============================")
         logger.log("ENGINE FINISHED")

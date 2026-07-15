@@ -9,7 +9,7 @@ class ValidatorTool(Tool):
 
     name = "validate"
 
-    def run(self, task):
+    def run(self, task, context):
 
         prompt = f"""
 You are evaluating research quality.
