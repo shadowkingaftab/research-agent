@@ -1,82 +1,42 @@
-from difflib import SequenceMatcher
-
-import numpy as np
-
-from pipeline.embedder import embedder
-
+from typing import List, Any
 
 class Retriever:
-
-    SEMANTIC_WEIGHT = 0.7
-    LEXICAL_WEIGHT = 0.3
-
-    MEMORY_BOOST = 1.05
-
-    def _lexical_score(self, query: str, item) -> float:
-
-        text = (item.fact + " " + item.summary).lower()
-
-        return SequenceMatcher(None, query, text).ratio()
-
-    def _semantic_score(self, query_embedding, item) -> float:
-
-        if not item.embedding or not query_embedding:
-            return 0.0
-
-        query_vec = np.asarray(query_embedding, dtype=np.float32)
-        item_vec = np.asarray(item.embedding, dtype=np.float32)
-
-        if query_vec.shape != item_vec.shape:
-            return 0.0
-
-        # Embeddings are already normalized by Embedder, so the
-        # dot product is equivalent to cosine similarity.
-        score = float(query_vec @ item_vec)
-
-        return max(0.0, score)
-
-    def retrieve(
-        self,
-        query: str,
-        evidence,
-        limit: int = 50,
-    ):
-
+    def retrieve(self, query: str, evidence: List[Any], limit: int = 50, k: int = 60) -> List[Any]:
         if not evidence:
             return []
 
-        query_lower = query.lower()
-        query_embedding = embedder.encode(query)
+        semantic_scores, keyword_scores = {}, {}
+        query_terms = set(query.lower().split())
 
-        scored = []
+        for idx, item in enumerate(evidence):
+            text = " ".join([
+                str(getattr(item, 'fact', '')), str(getattr(item, 'summary', '')),
+                " ".join(getattr(item, 'entities', [])), " ".join(getattr(item, 'keywords', []))
+            ]).lower()
+            
+            term_matches = sum(1 for term in query_terms if term in text)
+            keyword_scores[idx] = term_matches / len(query_terms) if query_terms else 0.0
 
-        for item in evidence:
-
-            lexical = self._lexical_score(query_lower, item)
-            semantic = self._semantic_score(query_embedding, item)
-
-            # If there's no embedding yet, fall back to pure lexical
-            # instead of letting a zero semantic score drag it down.
-            if semantic == 0.0 and not item.embedding:
-                combined = lexical
+            if hasattr(item, 'embedding') and item.embedding is not None:
+                semantic_scores[idx] = 0.5 + (keyword_scores[idx] * 0.5)
             else:
-                combined = (
-                    self.SEMANTIC_WEIGHT * semantic
-                    + self.LEXICAL_WEIGHT * lexical
-                )
+                semantic_scores[idx] = keyword_scores[idx] * 0.8
 
-            score = combined * item.confidence
+        rrf_scores = {}
+        for idx in range(len(evidence)):
+            rank_semantic = sorted(semantic_scores.keys(), key=lambda x: semantic_scores[x], reverse=True).index(idx) + 1
+            rank_keyword = sorted(keyword_scores.keys(), key=lambda x: keyword_scores[x], reverse=True).index(idx) + 1
+            rrf_scores[idx] = (1.0 / (k + rank_semantic)) + (1.0 / (k + rank_keyword))
 
-            if item.metadata.get("from_memory"):
-                score *= self.MEMORY_BOOST
+        ranked_indices = sorted(rrf_scores.keys(), key=lambda x: rrf_scores[x], reverse=True)[:limit]
+        
+        results = []
+        for idx in ranked_indices:
+            item = evidence[idx]
+            if hasattr(item, 'confidence'):
+                item.confidence = min(1.0, getattr(item, 'confidence', 0.5) + (rrf_scores[idx] * 0.1))
+            results.append(item)
 
-            item.retrieval_score = round(score, 4)
-
-            scored.append((score, item))
-
-        scored.sort(reverse=True, key=lambda x: x[0])
-
-        return [item for _, item in scored[:limit]]
-
+        return results
 
 retriever = Retriever()

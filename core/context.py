@@ -7,9 +7,10 @@ from core.profiler import profiler
 
 from core.document_store import DocumentStore
 from core.evidence_store import EvidenceStore
-
+from core.cognitive_state import CognitiveState
 
 class AgentContext:
+    cognitive_state: CognitiveState = field(default_factory=CognitiveState)
 
     def __init__(self):
 

@@ -1,11 +1,14 @@
 import json
-
 import streamlit as st
 
 from core.task import Task
 from core.agent_engine import agent_engine
 from core.logger import logger
 from core.research_memory import research_memory
+from core.events import (
+    PlanningStarted, PlanningCompleted, SubGoalStarted, ToolStarted, 
+    ToolCompleted, WriterStarted, WriterCompleted, Finished, Error
+)
 from exporters.markdown_exporter import MarkdownExporter
 from exporters.json_exporter import JSONExporter
 
@@ -73,7 +76,7 @@ if prompt:
     with st.chat_message("assistant"):
 
         status = st.empty()
-        status.info("🔍 Researching...")
+        status.info("🔍 Initializing Research OS...")
 
         logger.clear()
 
@@ -87,23 +90,38 @@ if prompt:
             task.project_name = new_project_name.strip()
 
         try:
-            agent_engine.run(task)
-
-            status.success("✅ Research complete.")
+            response = ""
+            # Consume the streaming generator for real-time UI updates
+            for event in agent_engine.run_stream(task):
+                if isinstance(event, PlanningStarted):
+                    status.info("🧠 Planning research strategy...")
+                elif isinstance(event, PlanningCompleted):
+                    status.info(f"📋 Plan created: {event.data.get('sub_goal_count', 0)} sub-goals.")
+                elif isinstance(event, SubGoalStarted):
+                    desc = event.data.get('description', '')
+                    status.info(f"🎯 Sub-goal {event.data.get('sub_goal_index', 0) + 1}: {desc[:60]}{'...' if len(desc) > 60 else ''}")
+                elif isinstance(event, ToolStarted):
+                    status.info(f"⚙️ Running {event.data.get('tool_name', 'tool')}...")
+                elif isinstance(event, ToolCompleted):
+                    status.info(f"✅ {event.data.get('tool_name', 'tool')} completed (+{event.data.get('evidence_delta', 0)} evidence).")
+                elif isinstance(event, WriterStarted):
+                    status.info("✍️ Synthesizing final report...")
+                elif isinstance(event, WriterCompleted):
+                    status.info("📝 Report generated.")
+                elif isinstance(event, Finished):
+                    status.success("✅ Research complete.")
+                elif isinstance(event, Error):
+                    status.error(f"❌ Error in {event.data.get('tool_name', 'process')}: {event.data.get('message', 'Unknown')}")
+                    raise Exception(event.data.get('message', 'Unknown error during execution'))
 
             response = task.final_answer or "No final answer generated."
-
             st.markdown(response)
-
             st.session_state.last_task = task
 
         except Exception as e:
-
             response = f"Error:\n\n{e}"
-
             status.error("❌ Research failed.")
             st.code(str(e))
-
             st.session_state.last_task = task
 
         st.session_state.messages.append(
@@ -138,7 +156,24 @@ if task is not None:
     if stats.get("evidence_by_category"):
         st.caption("Evidence by category")
         st.json(stats["evidence_by_category"])
+        # ---------------------------------
+    # Observability & Diagnostics
+    # ---------------------------------
+    
+    with st.expander("📊 Observability & Diagnostics"):
+        diag_report = telemetry.generate_diagnostics_report()
+        
+        d_cols = st.columns(3)
+        d_cols[0].metric("Total Tokens", diag_report["execution_summary"]["total_tokens"])
+        d_cols[1].metric("Est. Cost (USD)", f"${diag_report['execution_summary']['estimated_cost_usd']:.4f}")
+        d_cols[2].metric("Duration (s)", diag_report["execution_summary"]["total_duration_s"])
 
+        st.caption("Confidence Trajectory")
+        if diag_report["confidence_trajectory"]:
+            st.line_chart(diag_report["confidence_trajectory"])
+        
+        st.caption("Tool Performance")
+        st.json(diag_report["tool_performance"])
     # ---------------------------------
     # Knowledge Graph (Mermaid)
     # ---------------------------------

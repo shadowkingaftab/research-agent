@@ -6,6 +6,7 @@ from core.logger import logger
 
 from tools.search import search_web
 from tools.ranker import rank
+from core.learning import learning_engine
 
 
 class SearchTool(Tool):
@@ -53,7 +54,13 @@ class SearchTool(Tool):
         logger.log(
             f"Collected {len(ranked_results)} ranked search results."
         )
-
+                # Autonomous Learning: Record query effectiveness
+        for query in getattr(task, "search_queries", []):
+            # Calculate yield specific to this query if possible, otherwise use total delta
+            yield_count = len(task.search_results) # Simplified yield metric
+            learning_engine.record_query_effectiveness(query, yield_count)
+        
+        return task
         return task
 
 

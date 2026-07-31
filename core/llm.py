@@ -7,6 +7,7 @@ from config import GEMINI_API_KEY
 
 from core.cache import cache
 from core.logger import logger
+from core.telemetry import telemetry
 
 
 class LLM:
@@ -134,6 +135,20 @@ class LLM:
             raise
 
         cache.set(cache_key, obj)
+                # Telemetry: Record LLM token usage
+        try:
+            # Assuming 'response' object has usage info, adjust based on your actual LLM client
+            usage = getattr(response, 'usage', None)
+            if usage:
+                telemetry.record_llm_usage(
+                    input_tokens=getattr(usage, 'prompt_tokens', 0),
+                    output_tokens=getattr(usage, 'completion_tokens', 0),
+                    model=self.model_name
+                )
+        except Exception:
+            pass # Fail silently to avoid breaking generation
+        
+    
 
         return obj
 
